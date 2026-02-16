@@ -184,9 +184,15 @@ def _qtable_to_hdf5(self, hdf5_handle):
         elif isinstance(col, u.Quantity):
             col_group.attrs['is_time'] = False
             col_group.attrs['is_quantity'] = True
-            # Store the description separately since Quantity doesn't preserve it
+
+            # Store the description if it exists
             if hasattr(col, 'info') and hasattr(col.info, 'description') and col.info.description:
                 col_group.attrs['description'] = str(col.info.description)
+
+            # Store format if it exists (access via info.format for Quantity columns)
+            if hasattr(col, 'info') and hasattr(col.info, 'format') and col.info.format:
+                col_group.attrs['format'] = str(col.info.format)
+
             to_hdf5(col, col_group.create_group('quantity'))
 
             # Store info.meta if it exists
@@ -260,27 +266,35 @@ class _QTableDeserializer:
     def from_hdf5(cls, hdf5_handle):
         """Deserialize QTable from HDF5"""
         colnames = list(hdf5_handle.attrs['colnames'])
-        columns_group = hdf5_handle['columns']
 
-        # Reconstruct columns
-        columns = []
+        # Store format and description info to apply after table creation
+        column_formats = {}
+        column_descriptions = {}
+        column_info_meta = {}
+
+        data = {}
+        columns_group = hdf5_handle['columns']
         for colname in colnames:
             col_group = columns_group[colname]
 
             # Handle Time columns
             if col_group.attrs.get('is_time', False):
                 col = from_hdf5(col_group['time'])
-                col = Column(col, name=colname)
+                data[colname] = col
             # Handle Quantity columns
             elif col_group.attrs.get('is_quantity', False):
                 col = from_hdf5(col_group['quantity'])
-                # Wrap in Column to preserve name and metadata
-                col = Column(col, name=colname)
-                # Restore description if it was saved
-                if 'description' in col_group.attrs:
-                    col.info.description = col_group.attrs['description']
+                data[colname] = col
 
-                # Restore info.meta if it was saved
+                # Store format to apply later
+                if 'format' in col_group.attrs:
+                    column_formats[colname] = col_group.attrs['format']
+
+                # Store description to apply later
+                if 'description' in col_group.attrs:
+                    column_descriptions[colname] = col_group.attrs['description']
+
+                # Store info.meta to apply later
                 if 'info_meta' in col_group:
                     info_meta = {}
                     info_meta_group = col_group['info_meta']
@@ -292,70 +306,63 @@ class _QTableDeserializer:
                     for key in info_meta_group.attrs.keys():
                         if key not in info_meta:
                             info_meta[key] = info_meta_group.attrs[key]
-                    col.info.meta = info_meta
+                    column_info_meta[colname] = info_meta
             else:
                 # Regular column
-                data = col_group['data'][()]
+                col_data = col_group['data'][()]
 
                 # Convert bytes back to unicode if needed
                 if col_group.attrs.get('was_unicode', False):
-                    data = np.array(data, dtype='U')
+                    col_data = np.array(col_data, dtype='U')
 
                 if col_group.attrs.get('masked', False):
                     mask = col_group['mask'][()]
-                    col = MaskedColumn(data=data, mask=mask, name=colname)
+                    col = MaskedColumn(data=col_data, mask=mask)
                 else:
-                    col = Column(data=data, name=colname)
+                    col = Column(data=col_data)
 
-            # Restore column metadata
-            if 'description' in col_group.attrs:
-                try:
-                    col.description = col_group.attrs['description']
-                except AttributeError:
-                    # Some column types (like Quantity) don't support description
-                    pass
+                # Restore unit if present
+                if 'unit' in col_group.attrs and col_group.attrs['unit']:
+                    col = col * u.Unit(col_group.attrs['unit'])
 
-            if 'format' in col_group.attrs:
-                try:
-                    col.format = col_group.attrs['format']
-                except (AttributeError, ValueError):
-                    # Some column types don't support format or the format is incompatible
-                    pass
+                data[colname] = col
 
-            # Restore column meta dict
-            if 'meta' in col_group:
-                col.meta = {}
-                meta_group = col_group['meta']
-                for key in meta_group.keys():
-                    try:
-                        col.meta[key] = from_hdf5(meta_group[key])
-                    except:
-                        pass
-                for key in meta_group.attrs.keys():
-                    if key not in col.meta:
-                        col.meta[key] = meta_group.attrs[key]
+                # Store format to apply later
+                if 'format' in col_group.attrs:
+                    column_formats[colname] = col_group.attrs['format']
 
-            columns.append(col)
+                # Store description to apply later
+                if 'description' in col_group.attrs:
+                    column_descriptions[colname] = col_group.attrs['description']
 
         # Create QTable
-        qtable = QTable(columns)
+        qt = QTable(data)
+
+        # Apply formats, descriptions, and info.meta AFTER table creation
+        for colname in colnames:
+            if colname in column_formats:
+                qt[colname].info.format = column_formats[colname]
+
+            if colname in column_descriptions:
+                qt[colname].info.description = column_descriptions[colname]
+
+            if colname in column_info_meta:
+                qt[colname].info.meta = column_info_meta[colname]
 
         # Restore table metadata
         if 'meta' in hdf5_handle:
-            qtable.meta = {}
+            qt.meta = {}
             meta_group = hdf5_handle['meta']
             for key in meta_group.keys():
                 try:
-                    qtable.meta[key] = from_hdf5(meta_group[key])
+                    qt.meta[key] = from_hdf5(meta_group[key])
                 except:
                     pass
             for key in meta_group.attrs.keys():
-                if key not in qtable.meta:
-                    qtable.meta[key] = meta_group.attrs[key]
+                if key not in qt.meta:
+                    qt.meta[key] = meta_group.attrs[key]
 
-        return qtable
-
-
+        return qt
 # ============================================================================
 # TimeSeries
 # ============================================================================
@@ -401,6 +408,15 @@ def _timeseries_to_hdf5(self, hdf5_handle):
             # Check if column is a Quantity
             if isinstance(col, u.Quantity):
                 col_group.attrs['is_quantity'] = True
+
+                # Store format if it exists (access via info.format for Quantity columns)
+                if hasattr(col, 'info') and hasattr(col.info, 'format') and col.info.format:
+                    col_group.attrs['format'] = str(col.info.format)
+
+                # Store description if it exists
+                if hasattr(col, 'info') and hasattr(col.info, 'description') and col.info.description:
+                    col_group.attrs['description'] = str(col.info.description)
+
                 to_hdf5(col, col_group.create_group('quantity'))
             else:
                 col_group.attrs['is_quantity'] = False
@@ -457,7 +473,6 @@ def _timeseries_to_hdf5(self, hdf5_handle):
 
 TimeSeries.to_hdf5 = _timeseries_to_hdf5
 
-
 @subscribe_hdf5('astropy_hdf5io.TimeSeries', check_on_load=False)
 class _TimeSeriesDeserializer:
     """Deserializer for TimeSeries"""
@@ -472,6 +487,10 @@ class _TimeSeriesDeserializer:
         # Restore other columns
         other_colnames = list(hdf5_handle.attrs['colnames'])
 
+        # Store format and description info to apply after table creation
+        column_formats = {}
+        column_descriptions = {}
+
         data = {}
         if other_colnames and 'columns' in hdf5_handle:
             columns_group = hdf5_handle['columns']
@@ -482,6 +501,14 @@ class _TimeSeriesDeserializer:
                 # Handle Quantity columns
                 if col_group.attrs['is_quantity']:
                     col = from_hdf5(col_group['quantity'])
+
+                    # Store format to apply later
+                    if 'format' in col_group.attrs:
+                        column_formats[colname] = col_group.attrs['format']
+
+                    # Store description to apply later
+                    if 'description' in col_group.attrs:
+                        column_descriptions[colname] = col_group.attrs['description']
                 else:
                     # Regular column
                     col_data = col_group['data'][()]
@@ -500,15 +527,26 @@ class _TimeSeriesDeserializer:
                     if 'unit' in col_group.attrs and col_group.attrs['unit']:
                         col = col * u.Unit(col_group.attrs['unit'])
 
-                data[colname] = col
+                    # Store format to apply later
+                    if 'format' in col_group.attrs:
+                        column_formats[colname] = col_group.attrs['format']
 
-                # Restore column description if present
-                if 'description' in col_group.attrs:
-                    if isinstance(data[colname], Column):
-                        data[colname].description = col_group.attrs['description']
+                    # Store description to apply later
+                    if 'description' in col_group.attrs:
+                        column_descriptions[colname] = col_group.attrs['description']
+
+                data[colname] = col
 
         # Create TimeSeries
         ts = TimeSeries(time=time_data, data=data)
+
+        # Apply formats and descriptions AFTER table creation
+        for colname in other_colnames:
+            if colname in column_formats:
+                ts[colname].info.format = column_formats[colname]
+
+            if colname in column_descriptions:
+                ts[colname].info.description = column_descriptions[colname]
 
         # Restore table metadata
         if 'meta' in hdf5_handle:

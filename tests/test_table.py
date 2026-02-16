@@ -95,6 +95,20 @@ class TestTable:
         assert loaded['distance'].unit == u.km
         assert loaded['time'].unit == u.s
 
+    def test_table_column_format(self):
+        """Test that column format is preserved in Table"""
+        t = Table()
+        t['value'] = [1.23456789, 2.34567890, 3.45678901]
+        t['value'].info.format = '.3f'
+
+        with NamedTemporaryFile(suffix='.hdf5', delete=False) as f:
+            save(t, f.name)
+            loaded = load(f.name)
+
+        assert loaded['value'].info.format == '.3f'
+        # Check that the string representation uses the format
+        assert '1.235' in str(loaded)
+        assert '2.346' in str(loaded)
 
 class TestQTable:
     """Tests for QTable serialization"""
@@ -201,6 +215,40 @@ class TestQTable:
         assert loaded['position'].shape == t['position'].shape
         assert np.allclose(loaded['position'].value, t['position'].value)
 
+    def test_qtable_column_format(self):
+        """Test that column format is preserved in QTable"""
+        qt = QTable()
+        qt['flux'] = [1.23456789, 2.34567890, 3.45678901] * u.Jy
+        qt['flux'].info.format = '.2f'
+
+        with NamedTemporaryFile(suffix='.hdf5', delete=False) as f:
+            save(qt, f.name)
+            loaded = load(f.name)
+
+        assert loaded['flux'].info.format == '.2f'
+        # Check that the display uses the format
+        assert '1.23' in str(loaded)
+        assert '2.35' in str(loaded)
+        assert '3.46' in str(loaded)
+
+    def test_qtable_multiple_column_formats(self):
+        """Test multiple columns with different formats"""
+        qt = QTable()
+        qt['flux'] = [1.23456789, 2.34567890] * u.Jy
+        qt['magnitude'] = [18.123456, 19.234567]
+        qt['distance'] = [100.5678, 200.6789] * u.pc
+
+        qt['flux'].info.format = '.2f'
+        qt['magnitude'].info.format = '.1f'
+        qt['distance'].info.format = '.0f'
+
+        with NamedTemporaryFile(suffix='.hdf5', delete=False) as f:
+            save(qt, f.name)
+            loaded = load(f.name)
+
+        assert loaded['flux'].info.format == '.2f'
+        assert loaded['magnitude'].info.format == '.1f'
+        assert loaded['distance'].info.format == '.0f'
 
 class TestTimeSeries:
     """Tests for TimeSeries serialization"""
@@ -312,6 +360,88 @@ class TestTimeSeries:
         assert isinstance(loaded, TimeSeries)
         assert len(loaded) == 0
 
+    def test_timeseries_time_format_preservation(self):
+        """Test that time format is preserved in TimeSeries"""
+        times = Time(['2023-01-01T00:00:00',
+                      '2023-01-01T01:00:00',
+                      '2023-01-01T02:00:00'], format='isot', scale='utc')
+
+        ts = TimeSeries(time=times)
+        ts['flux'] = [100, 120, 110] * u.Jy
+
+        with NamedTemporaryFile(suffix='.hdf5', delete=False) as f:
+            save(ts, f.name)
+            loaded = load(f.name)
+
+        assert loaded['time'].format == 'isot'
+        assert loaded['time'].scale == 'utc'
+        assert all(loaded['time'] == times)
+
+    def test_timeseries_time_precision(self):
+        """Test that time precision is preserved in TimeSeries"""
+        times = Time(['2023-01-01T00:00:00.123456',
+                      '2023-01-01T01:00:00.234567',
+                      '2023-01-01T02:00:00.345678'],
+                     format='isot', precision=6)
+
+        ts = TimeSeries(time=times)
+        ts['magnitude'] = [18.5, 18.3, 18.7]
+
+        with NamedTemporaryFile(suffix='.hdf5', delete=False) as f:
+            save(ts, f.name)
+            loaded = load(f.name)
+
+        assert loaded['time'].format == 'isot'
+        assert loaded['time'].precision == 6
+        # Check string representation includes microseconds
+        assert '.123456' in str(loaded['time'][0])
+
+    def test_timeseries_time_iso_format(self):
+        """Test TimeSeries with ISO format (not ISOT)"""
+        times = Time(['2023-01-01 00:00:00',
+                      '2023-01-01 06:00:00',
+                      '2023-01-01 12:00:00'], format='iso')
+
+        ts = TimeSeries(time=times)
+        ts['temperature'] = [5800, 5850, 5820] * u.K
+
+        with NamedTemporaryFile(suffix='.hdf5', delete=False) as f:
+            save(ts, f.name)
+            loaded = load(f.name)
+
+        assert loaded['time'].format == 'iso'
+        assert all(loaded['time'] == times)
+
+    def test_timeseries_time_jd_format(self):
+        """Test TimeSeries with JD format"""
+        times = Time([2459945.0, 2459945.25, 2459945.5], format='jd')
+
+        ts = TimeSeries(time=times)
+        ts['count'] = [100, 150, 200]
+
+        with NamedTemporaryFile(suffix='.hdf5', delete=False) as f:
+            save(ts, f.name)
+            loaded = load(f.name)
+
+        assert loaded['time'].format == 'jd'
+        assert all(np.isclose(loaded['time'].jd, times.jd))
+
+    def test_timeseries_time_different_scales(self):
+        """Test TimeSeries preserves different time scales"""
+        for scale in ['utc', 'tai', 'tt']:
+            times = Time(['2023-01-01T00:00:00',
+                          '2023-01-01T01:00:00'],
+                         format='isot', scale=scale)
+
+            ts = TimeSeries(time=times)
+            ts['value'] = [1.0, 2.0]
+
+            with NamedTemporaryFile(suffix='.hdf5', delete=False) as f:
+                save(ts, f.name)
+                loaded = load(f.name)
+
+            assert loaded['time'].scale == scale
+            assert loaded['time'].format == 'isot'
 
 class TestNestedTableStructures:
     """Tests for tables in nested structures"""
@@ -358,6 +488,28 @@ class TestNestedTableStructures:
             assert isinstance(load_tbl, QTable)
             assert np.allclose(load_tbl['flux'].value, orig['flux'].value)
 
+    def test_timeseries_column_format(self):
+        """Test that column format is preserved in TimeSeries"""
+        times = Time(['2023-01-01T00:00:00',
+                      '2023-01-01T01:00:00',
+                      '2023-01-01T02:00:00'], format='isot')
+
+        ts = TimeSeries(time=times)
+        ts['magnitude'] = [18.123456, 18.234567, 18.345678]
+        ts['flux'] = [1.23456789, 2.34567890, 3.45678901] * u.Jy
+
+        ts['magnitude'].info.format = '.2f'
+        ts['flux'].info.format = '.3f'
+
+        with NamedTemporaryFile(suffix='.hdf5', delete=False) as f:
+            save(ts, f.name)
+            loaded = load(f.name)
+
+        assert loaded['magnitude'].info.format == '.2f'
+        assert loaded['flux'].info.format == '.3f'
+        # Check display
+        assert '18.12' in str(loaded)
+        assert '1.235' in str(loaded)
 
 class TestRealWorldExamples:
     """Tests with realistic astronomical data"""

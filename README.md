@@ -36,8 +36,6 @@ pip install astropy-hdf5io
 ### Time
 - ✅ `astropy.time.Time` - various formats and scales
 
-## Supported Types
-
 ### Tables and Time Series
 - ✅ `astropy.table.Table` - general tabular data
 - ✅ `astropy.table.QTable` - tables with Quantity columns
