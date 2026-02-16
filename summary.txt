@@ -1,0 +1,35 @@
+Core Architecture:
+
+    Monkey-patching approach: Added to_hdf5 methods directly to AstroPy classes
+    Custom deserializers: Used @subscribe_hdf5 decorator with class-based deserializers
+    Type tag as dataset: Stored type_tag as a dataset (not attribute) per fsc.hdf5-io requirements
+
+Supported Types:
+
+    astropy.units.Quantity - Including logarithmic units (magnitudes, decibels)
+    astropy.time.Time - All formats and scales
+    astropy.coordinates.SkyCoord - 2D and 3D coordinates with various frames
+    Coordinate components:
+        Angle, Longitude, Latitude, Distance
+        EarthLocation
+        CartesianRepresentation, SphericalRepresentation, CylindricalRepresentation, PhysicsSphericalRepresentation
+        All differential types
+    astropy.table.Table - Including masked columns, string columns, metadata
+    astropy.table.QTable - With Quantity and Time columns
+    astropy.timeseries.TimeSeries - With proper time column handling
+
+Special handling:
+
+    Unicode string conversion (HDF5 doesn't support Unicode directly)
+    Nested structures (tables in dicts, lists)
+    Column metadata (.info.description, .info.meta)
+    Masked columns
+    Complex units and equivalencies
+
+Test Coverage:
+
+    63 comprehensive tests covering all types
+    Scalar and array values
+    Nested structures
+    Real-world examples (photometry tables, light curves)
+    Metadata preservation
