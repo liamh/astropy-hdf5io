@@ -396,6 +396,27 @@ Simply importing `astropy_hdf5io` automatically registers all serializers. After
 - `astropy.table.QTable` (with Quantity columns)
 - `astropy.timeseries.TimeSeries`
 
+### Groups
+
+`astropy-hdf5io` provides utilities for organizing data in group hierarchies in the HDF5 file:
+
+```python
+from astropy_hdf5io import save_to_group, load_from_group, print_tree
+from astropy.coordinates import SkyCoord
+import astropy.units as u
+
+
+# Save to nested groups
+coord = SkyCoord(ra=10*u.degree, dec=40*u.degree, distance=1000*u.pc)
+save_to_group(coord, 'astronomy.h5', 'observations/targets/ngc1234')
+
+# Load from specific group
+loaded = load_from_group('astronomy.h5', 'observations/targets/ngc1234')
+
+# Show structure
+print_tree('astronomy.hdf5')
+```
+
 ## Development
 
 ### Setup
@@ -437,7 +458,7 @@ This project is licensed under the BSD 3-Clause License - see the [LICENSE](LICE
 
 ## Acknowledgments
 
-- Built on top of [fsc.hdf5-io](https://github.com/Z2PackDev/fsc.hdf5_io)
+- Built on top of [fsc.hdf5-io](https://github.com/FrescolinoGroup/pyhdf5io/)
 - Designed for seamless integration with [AstroPy](https://www.astropy.org/)
 - Inspired by the AstroPy community's need for efficient HDF5 storage
 
