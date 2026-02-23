@@ -1,8 +1,5 @@
 """
 AstroPy serialization support for fsc.hdf5-io
-
-This package provides automatic HDF5 serialization for AstroPy types
-when using fsc.hdf5-io.
 """
 
 __version__ = "0.1.0"
@@ -21,6 +18,8 @@ from ._group_utils import (
     list_groups,
     print_tree,
     delete_group,
+    save_recursive,  # New
+    load_recursive,  # New
 )
 
 __all__ = [
@@ -31,4 +30,7 @@ __all__ = [
     'list_groups',
     'print_tree',
     'delete_group',
+    # Recursive utilities
+    'save_recursive',
+    'load_recursive',
 ]
