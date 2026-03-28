@@ -96,5 +96,25 @@ def test_equivalencies():
     assert np.isclose(loaded_joules.value, energy_joules.value)
 
 
+def test_structured_quantity():
+    """Test saving and loading a Quantity backed by a structured/record array"""
+    dtype = np.dtype([('r', float), ('lon', float), ('lat', float)])
+    arr = np.array([(6371.0, 45.0, 30.0)], dtype=dtype)
+    q = u.Quantity(arr, unit=u.StructuredUnit('km,deg,deg', names=('r', 'lon', 'lat')))
+
+    with NamedTemporaryFile(suffix='.hdf5', delete=False) as f:
+        save(q, f.name)
+        loaded = load(f.name)
+
+    assert isinstance(loaded, u.Quantity)
+    assert loaded.unit.field_names == q.unit.field_names
+    assert loaded.unit['r'] == q.unit['r']
+    assert loaded.unit['lon'] == q.unit['lon']
+    assert loaded.unit['lat'] == q.unit['lat']
+    assert loaded.value['r'][0] == q.value['r'][0]
+    assert loaded.value['lon'][0] == q.value['lon'][0]
+    assert loaded.value['lat'][0] == q.value['lat'][0]
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
