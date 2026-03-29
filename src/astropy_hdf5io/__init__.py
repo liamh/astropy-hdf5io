@@ -18,9 +18,12 @@ from ._group_utils import (
     list_groups,
     print_tree,
     delete_group,
-    save_recursive,  # New
-    load_recursive,  # New
+    save_recursive,
+    load_recursive,
 )
+
+# Munch support
+from ._munch_utils import load_munch
 
 __all__ = [
     '__version__',
@@ -33,4 +36,6 @@ __all__ = [
     # Recursive utilities
     'save_recursive',
     'load_recursive',
+    # Munch utilities
+    'load_munch',
 ]

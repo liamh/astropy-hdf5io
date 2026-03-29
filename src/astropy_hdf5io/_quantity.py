@@ -1,5 +1,7 @@
 """Serialization support for astropy.units.Quantity"""
 
+import json
+
 import numpy as np
 from fsc.hdf5_io import subscribe_hdf5
 import astropy.units as u
@@ -16,12 +18,16 @@ def _quantity_to_hdf5(self, hdf5_handle):
     else:
         hdf5_handle['value'] = self.value
 
-    # Store unit as attribute on the value dataset
-    hdf5_handle['value'].attrs['unit'] = str(self.unit)
-
     # Check if it's a special unit type (like logarithmic units)
     unit_type = type(self.unit).__name__
     hdf5_handle['value'].attrs['unit_type'] = unit_type
+
+    # Store unit: handle StructuredUnit separately since str() is not parseable
+    if isinstance(self.unit, u.StructuredUnit):
+        field_units = {name: str(self.unit[name]) for name in self.unit.field_names}
+        hdf5_handle['value'].attrs['unit'] = json.dumps(field_units)
+    else:
+        hdf5_handle['value'].attrs['unit'] = str(self.unit)
 
 
 u.Quantity.to_hdf5 = _quantity_to_hdf5
@@ -40,7 +46,14 @@ class _QuantityDeserializer:
         # Handle different unit types
         unit_type = hdf5_handle['value'].attrs.get('unit_type', 'Unit')
 
-        if unit_type == 'MagUnit' or unit_type == 'DecibelUnit':
+        if unit_type == 'StructuredUnit':
+            field_units = json.loads(unit_str)
+            unit = u.StructuredUnit(
+                tuple(u.Unit(v) for v in field_units.values()),
+                names=tuple(field_units.keys()),
+            )
+            return u.Quantity(value, unit=unit)
+        elif unit_type == 'MagUnit' or unit_type == 'DecibelUnit':
             # For logarithmic units, we need to use the physical unit
             unit = u.Unit(unit_str)
             # Create a Quantity with the physical unit, which will get the right type
