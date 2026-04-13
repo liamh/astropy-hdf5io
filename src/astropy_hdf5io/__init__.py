@@ -2,7 +2,13 @@
 AstroPy serialization support for fsc.hdf5-io
 """
 
-__version__ = "0.1.0"
+from importlib.metadata import version, PackageNotFoundError
+
+try:
+    __version__ = version("astropy-hdf5io")
+except PackageNotFoundError:
+    # Package is not installed (e.g. running directly from source)
+    __version__ = "unknown"
 
 # Import all serializers to register them
 from . import _quantity
@@ -22,8 +28,15 @@ from ._group_utils import (
     load_recursive,
 )
 
-# Munch support
-from ._munch_utils import load_munch
+# Munch support (optional — requires 'munch' package)
+try:
+    from ._munch_utils import load_munch
+except ImportError:
+    def load_munch(filename):
+        raise ImportError(
+            "The 'munch' package is required for load_munch(). "
+            "Install it with: pip install astropy-hdf5io[munch]"
+        )
 
 __all__ = [
     '__version__',
@@ -36,6 +49,6 @@ __all__ = [
     # Recursive utilities
     'save_recursive',
     'load_recursive',
-    # Munch utilities
+    # Munch utilities (only if munch is installed)
     'load_munch',
 ]

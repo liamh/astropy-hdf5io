@@ -5,10 +5,17 @@ import os
 import numpy as np
 import astropy.units as u
 from astropy.time import Time
-from munch import Munch, munchify
 
 from astropy_hdf5io import save_recursive, load_recursive, print_tree
 
+# Optional munch import — used only in munch-specific tests
+try:
+    from munch import Munch, munchify
+    HAS_MUNCH = True
+except ImportError:
+    HAS_MUNCH = False
+
+requires_munch = pytest.mark.skipif(not HAS_MUNCH, reason="munch not installed")
 
 class TestRecursiveSave:
     """Tests for save_recursive."""
@@ -35,6 +42,7 @@ class TestRecursiveSave:
         finally:
             os.unlink(filename)
 
+    @requires_munch
     def test_munch_structure(self):
         """Test saving a Munch structure."""
         data = Munch()
@@ -55,6 +63,7 @@ class TestRecursiveSave:
         finally:
             os.unlink(filename)
 
+    @requires_munch
     def test_roundtrip_munch_structure(self):
         """Test saving and loading Munch structure."""
         original = Munch()
@@ -171,6 +180,7 @@ class TestRecursiveLoad:
 class TestIntegration:
     """Integration tests."""
 
+    @requires_munch
     def test_roundtrip_munch_structure(self):
         """Test saving and loading Munch structure."""
         original = Munch()
